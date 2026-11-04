@@ -2,9 +2,9 @@
 
 Azure Managed Redis（AMR）开始维护和维护结束时，把 Resource Health 事件推送成飞书交互卡片。卡片版式与 [azure-alert](https://github.com/linkinchow/azure-alert) 一致。部署和验证都不会对 Redis 做维护、重启或故障转移。
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FOWNER%2FREPO%2Fmain%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FOWNER%2FREPO%2Fmain%2Fui%2FcreateUiDefinition.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Flinkinchow%2Famr-maintenance-alert%2Fmain%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Flinkinchow%2Famr-maintenance-alert%2Fmain%2Fui%2FcreateUiDefinition.json)
 
-> 仓库发布到 GitHub 后，把按钮链接中的 `OWNER%2FREPO` 换成实际的仓库路径（例如 `myorg%2Famr-maintenance-alert`）。
+> fork 本仓库后，把按钮链接中的 `linkinchow%2Famr-maintenance-alert%2Fmain` 换成自己的仓库和分支。
 
 ## 架构
 
