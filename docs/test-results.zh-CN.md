@@ -137,6 +137,10 @@ The resources in the scope must be in the same subscription as the rule.
 | 发送 | 通过这套部署发出 TEST 卡片，飞书一次返回业务码 0，群内收到 |
 | 清理 | 核对资源组名、scenario 标签和资源清单后删除两个订阅的 `rg-amr-alerts-test` |
 
+### 正式环境升级
+
+2026-11-04 用本模板原地升级正式环境（订阅 A、B 的 `rg-amr-alerts`）：what-if 全部为修改，没有新建或删除；规则只变更 `managedBy` 标签，条件和 scope 不变；Logic App 换成卡片 + 限流重试的定义；Action Group 刷新 callback。部署成功后回读：两条规则已启用、条件与升级前一致、指向原 Action Group；Logic App 订阅清单正确；Action Group 只有这个 Logic App 接收器、原生 schema、无邮件接收器。经正式 Logic App 回放一张 TEST 卡片，飞书一次返回业务码 0。
+
 ## 六、已知边界
 
 - 是维护开始/结束通知，不是提前预告；事件周期不等于业务中断时长。加上 2–7 分钟投递延迟，“开始”消息可能晚于 failover。
