@@ -1,0 +1,624 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.44.1.10279",
+      "templateHash": "13659954957275996414"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Region of the resource groups and the Logic App."
+      }
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "defaultValue": "rg-amr-alerts",
+      "metadata": {
+        "description": "Resource group created in the deployment subscription and in every monitored subscription."
+      }
+    },
+    "logicAppName": {
+      "type": "string",
+      "defaultValue": "logic-amr-maintenance-feishu"
+    },
+    "actionGroupName": {
+      "type": "string",
+      "defaultValue": "ag-amr-maintenance-feishu"
+    },
+    "ruleName": {
+      "type": "string",
+      "defaultValue": "ala-amr-health-events"
+    },
+    "feishuWebhookUrl": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Feishu / Lark custom bot webhook URL."
+      }
+    },
+    "subscriptions": {
+      "type": "array",
+      "defaultValue": [
+        {
+          "id": "[subscription().subscriptionId]",
+          "name": "[subscription().displayName]"
+        }
+      ],
+      "metadata": {
+        "description": "Monitored subscriptions: [{ id, name }]. name is shown in the card; the list is also the workflow allow-list."
+      }
+    },
+    "ruleEnabled": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Create the alert rules enabled. Test deployments set false so real events do not reach a test group."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {
+        "scenario": "amr-maintenance-alerts",
+        "managedBy": "amr-maintenance-alert"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2024-03-01",
+      "name": "[parameters('resourceGroupName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "amr-notifications",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "logicAppName": {
+            "value": "[parameters('logicAppName')]"
+          },
+          "actionGroupName": {
+            "value": "[parameters('actionGroupName')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "feishuWebhookUrl": {
+            "value": "[parameters('feishuWebhookUrl')]"
+          },
+          "subscriptionNames": {
+            "value": "[toObject(parameters('subscriptions'), lambda('s', toLower(lambdaVariables('s').id)), lambda('s', lambdaVariables('s').name))]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "13144367389901200501"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]"
+            },
+            "logicAppName": {
+              "type": "string"
+            },
+            "actionGroupName": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {}
+            },
+            "feishuWebhookUrl": {
+              "type": "securestring"
+            },
+            "subscriptionNames": {
+              "type": "object",
+              "metadata": {
+                "description": "Lower-case subscription id -> display name; also the workflow allow-list."
+              }
+            }
+          },
+          "variables": {
+            "$fxv#0": {
+              "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+              "contentVersion": "1.0.0.0",
+              "parameters": {
+                "feishuWebhookUrl": {
+                  "type": "SecureString"
+                },
+                "subscriptionNames": {
+                  "type": "Object"
+                },
+                "resourceGroupName": {
+                  "type": "String"
+                }
+              },
+              "triggers": {
+                "Receive_alert": {
+                  "type": "Request",
+                  "kind": "Http",
+                  "inputs": {
+                    "method": "POST",
+                    "schema": {
+                      "type": "object",
+                      "required": [
+                        "schemaId",
+                        "data"
+                      ],
+                      "properties": {
+                        "schemaId": {
+                          "type": "string"
+                        },
+                        "data": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "actions": {
+                "Event": {
+                  "type": "Compose",
+                  "inputs": "@coalesce(triggerBody()?['data']?['context']?['activityLog'], triggerBody()?['data']?['alertContext'], json('{}'))",
+                  "runAfter": {}
+                },
+                "Metadata": {
+                  "type": "Compose",
+                  "inputs": "@coalesce(triggerBody()?['data']?['properties'], triggerBody()?['data']?['customProperties'], json('{}'))",
+                  "runAfter": {
+                    "Event": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Target": {
+                  "type": "Compose",
+                  "inputs": "@toLower(coalesce(outputs('Event')?['resourceId'], first(if(empty(triggerBody()?['data']?['essentials']?['alertTargetIDs']), createArray(''), triggerBody()?['data']?['essentials']?['alertTargetIDs']))))",
+                  "runAfter": {
+                    "Metadata": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Description": {
+                  "type": "Compose",
+                  "inputs": "@string(coalesce(outputs('Event')?['eventDescription'], outputs('Event')?['description'], outputs('Event')?['properties']?['details'], outputs('Event')?['properties']?['title'], ''))",
+                  "runAfter": {
+                    "Target": [
+                      "Succeeded"
+                    ]
+                  }
+                },
+                "Validate_resource_path": {
+                  "type": "If",
+                  "runAfter": {
+                    "Description": [
+                      "Succeeded"
+                    ]
+                  },
+                  "expression": "@and(startsWith(outputs('Target'), '/subscriptions/'), equals(length(split(outputs('Target'), '/')), 9))",
+                  "actions": {
+                    "Validate_event": {
+                      "type": "If",
+                      "runAfter": {},
+                      "expression": "@and(or(equals(triggerBody()?['schemaId'], 'Microsoft.Insights/activityLogs'), equals(triggerBody()?['schemaId'], 'azureMonitorCommonAlertSchema')), or(and(and(contains(parameters('subscriptionNames'), split(outputs('Target'), '/')[2]), equals(split(outputs('Target'), '/')[3], 'resourcegroups'), equals(split(outputs('Target'), '/')[5], 'providers')), equals(split(outputs('Target'), '/')[6], 'microsoft.cache'), equals(split(outputs('Target'), '/')[7], 'redisenterprise'), equals(toLower(coalesce(outputs('Event')?['eventSource'], '')), 'resourcehealth'), or(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action'), equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/resolved/action'))), and(and(contains(parameters('subscriptionNames'), split(outputs('Target'), '/')[2]), equals(split(outputs('Target'), '/')[3], 'resourcegroups'), equals(split(outputs('Target'), '/')[5], 'providers')), equals(split(outputs('Target'), '/')[4], toLower(parameters('resourceGroupName'))), equals(split(outputs('Target'), '/')[6], 'microsoft.insights'), equals(split(outputs('Target'), '/')[7], 'actiongroups'), equals(split(outputs('Target'), '/')[8], 'ag-amr-canary-signal'), equals(outputs('Metadata')?['testMode'], 'canary'), equals(toLower(coalesce(outputs('Event')?['eventSource'], '')), 'administrative'), equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.insights/actiongroups/write'), equals(toLower(coalesce(outputs('Event')?['status'], '')), 'succeeded'))))",
+                      "actions": {
+                        "Is_canary": {
+                          "type": "Compose",
+                          "inputs": "@and(and(contains(parameters('subscriptionNames'), split(outputs('Target'), '/')[2]), equals(split(outputs('Target'), '/')[3], 'resourcegroups'), equals(split(outputs('Target'), '/')[5], 'providers')), equals(split(outputs('Target'), '/')[4], toLower(parameters('resourceGroupName'))), equals(split(outputs('Target'), '/')[6], 'microsoft.insights'), equals(split(outputs('Target'), '/')[7], 'actiongroups'), equals(split(outputs('Target'), '/')[8], 'ag-amr-canary-signal'), equals(outputs('Metadata')?['testMode'], 'canary'), equals(toLower(coalesce(outputs('Event')?['eventSource'], '')), 'administrative'), equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.insights/actiongroups/write'), equals(toLower(coalesce(outputs('Event')?['status'], '')), 'succeeded'))",
+                          "runAfter": {}
+                        },
+                        "Post_to_Feishu": {
+                          "type": "Http",
+                          "runAfter": {
+                            "Is_canary": [
+                              "Succeeded"
+                            ]
+                          },
+                          "inputs": {
+                            "method": "POST",
+                            "uri": "@parameters('feishuWebhookUrl')",
+                            "headers": {
+                              "Content-Type": "application/json"
+                            },
+                            "retryPolicy": {
+                              "type": "exponential",
+                              "count": 3,
+                              "interval": "PT10S"
+                            },
+                            "body": {
+                              "msg_type": "interactive",
+                              "card": {
+                                "config": {
+                                  "wide_screen_mode": true
+                                },
+                                "header": {
+                                  "template": "@if(outputs('Is_canary'), 'blue', if(not(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action')), 'green', if(contains(toLower(outputs('Description')), 'planned maintenance'), 'orange', 'blue')))",
+                                  "title": {
+                                    "tag": "plain_text",
+                                    "content": "@concat(if(outputs('Is_canary'), '[TEST 通知链路验证] ', if(equals(outputs('Metadata')?['testMode'], 'history-replay'), '[TEST 历史回放] ', '')), if(outputs('Is_canary'), '提示', if(not(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action')), '已恢复', if(contains(toLower(outputs('Description')), 'planned maintenance'), '警告', '提示'))), '｜', if(outputs('Is_canary'), 'AMR 通知链路', if(contains(toLower(outputs('Description')), 'planned maintenance'), if(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action'), 'AMR 维护开始', 'AMR 维护结束'), 'AMR 健康事件（维护类型未确认）')), '｜', last(split(outputs('Target'), '/')))"
+                                  }
+                                },
+                                "elements": [
+                                  {
+                                    "tag": "div",
+                                    "text": {
+                                      "tag": "lark_md",
+                                      "content": "@concat('**时间（北京时间）**：', if(empty(outputs('Event')?['eventTimestamp']), '未提供', convertTimeZone(outputs('Event')?['eventTimestamp'], 'UTC', 'China Standard Time', 'yyyy-MM-dd HH:mm:ss')), '\n', '**实例**：', last(split(outputs('Target'), '/')), '\n', '**订阅**：', coalesce(parameters('subscriptionNames')?[split(outputs('Target'), '/')[2]], '未提供'), '\n', '**订阅 ID**：', split(outputs('Target'), '/')[2], '\n', '**资源组**：', split(outputs('Target'), '/')[4], '\n', '**阶段**：', if(outputs('Is_canary'), 'TEST canary（不是维护）', if(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action'), '开始/进行中', '结束')), '\n', '**事件状态**：', coalesce(outputs('Event')?['status'], '未提供'), '\n', '**Event ID**：', coalesce(outputs('Event')?['eventDataId'], '未提供'))"
+                                    }
+                                  },
+                                  {
+                                    "tag": "hr"
+                                  },
+                                  {
+                                    "tag": "div",
+                                    "text": {
+                                      "tag": "lark_md",
+                                      "content": "@concat(if(empty(outputs('Description')), '负载未提供原始维护说明，请查看 Activity Log；不以规则描述代替。', outputs('Description')), '\n\n本通知不代表提前预告；事件跨度不等于业务中断时长。')"
+                                    }
+                                  },
+                                  {
+                                    "tag": "action",
+                                    "actions": [
+                                      {
+                                        "tag": "button",
+                                        "type": "primary",
+                                        "text": {
+                                          "tag": "plain_text",
+                                          "content": "在 Azure 门户中查看"
+                                        },
+                                        "url": "@concat('https://portal.azure.com/#resource', outputs('Target'))"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "tag": "note",
+                                    "elements": [
+                                      {
+                                        "tag": "plain_text",
+                                        "content": "Azure 告警 · 来源 AMR 维护 · ActivityLog"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          "runtimeConfiguration": {
+                            "secureData": {
+                              "properties": [
+                                "inputs",
+                                "outputs"
+                              ]
+                            }
+                          }
+                        },
+                        "Verify_Feishu_result": {
+                          "type": "If",
+                          "runAfter": {
+                            "Post_to_Feishu": [
+                              "Succeeded"
+                            ]
+                          },
+                          "expression": "@equals(string(coalesce(body('Post_to_Feishu')?['code'], body('Post_to_Feishu')?['StatusCode'], -1)), '0')",
+                          "actions": {
+                            "Delivery_accepted": {
+                              "type": "Compose",
+                              "inputs": "@'Feishu returned business code 0; verify group delivery for acceptance.'",
+                              "runAfter": {}
+                            }
+                          },
+                          "else": {
+                            "actions": {
+                              "Delivery_failed": {
+                                "type": "Terminate",
+                                "runAfter": {},
+                                "inputs": {
+                                  "runStatus": "Failed",
+                                  "runError": {
+                                    "code": "FeishuRejected",
+                                    "message": "Feishu did not return a successful business code."
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "else": {
+                        "actions": {}
+                      }
+                    }
+                  },
+                  "else": {
+                    "actions": {}
+                  }
+                }
+              },
+              "outputs": {}
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Logic/workflows",
+              "apiVersion": "2019-05-01",
+              "name": "[parameters('logicAppName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "state": "Enabled",
+                "definition": "[variables('$fxv#0')]",
+                "parameters": {
+                  "feishuWebhookUrl": {
+                    "value": "[parameters('feishuWebhookUrl')]"
+                  },
+                  "subscriptionNames": {
+                    "value": "[parameters('subscriptionNames')]"
+                  },
+                  "resourceGroupName": {
+                    "value": "[resourceGroup().name]"
+                  }
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/actionGroups",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('actionGroupName')]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "enabled": true,
+                "groupShortName": "AMRAlerts",
+                "emailReceivers": [],
+                "logicAppReceivers": [
+                  {
+                    "name": "FeishuAMR",
+                    "resourceId": "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]",
+                    "callbackUrl": "[listCallbackUrl(format('{0}/triggers/Receive_alert', resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))), '2019-05-01').value]",
+                    "useCommonAlertSchema": false
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "actionGroupId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+            },
+            "logicAppId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]"
+      ]
+    },
+    {
+      "copy": {
+        "name": "ruleRg",
+        "count": "[length(parameters('subscriptions'))]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('amr-rg-{0}', uniqueString(parameters('subscriptions')[copyIndex()].id, parameters('resourceGroupName')))]",
+      "subscriptionId": "[parameters('subscriptions')[copyIndex()].id]",
+      "location": "[deployment().location]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "name": {
+            "value": "[parameters('resourceGroupName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "17213846140405559574"
+            }
+          },
+          "parameters": {
+            "name": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {}
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Resources/resourceGroups",
+              "apiVersion": "2024-03-01",
+              "name": "[parameters('name')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "copy": {
+        "name": "rule",
+        "count": "[length(parameters('subscriptions'))]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('amr-rule-{0}', uniqueString(parameters('subscriptions')[copyIndex()].id, parameters('resourceGroupName')))]",
+      "subscriptionId": "[parameters('subscriptions')[copyIndex()].id]",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "ruleName": {
+            "value": "[parameters('ruleName')]"
+          },
+          "actionGroupId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'amr-notifications'), '2025-04-01').outputs.actionGroupId.value]"
+          },
+          "enabled": {
+            "value": "[parameters('ruleEnabled')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "13008378288559073223"
+            }
+          },
+          "parameters": {
+            "ruleName": {
+              "type": "string"
+            },
+            "actionGroupId": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "bool",
+              "defaultValue": true
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {}
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/activityLogAlerts",
+              "apiVersion": "2020-10-01",
+              "name": "[parameters('ruleName')]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "enabled": "[parameters('enabled')]",
+                "scopes": [
+                  "[subscription().id]"
+                ],
+                "description": "AMR ResourceHealth InProgress/Resolved events; not advance maintenance notice.",
+                "condition": {
+                  "allOf": [
+                    {
+                      "field": "category",
+                      "equals": "ResourceHealth"
+                    },
+                    {
+                      "field": "resourceType",
+                      "equals": "Microsoft.Cache/redisEnterprise"
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "field": "operationName",
+                          "equals": "Microsoft.Resourcehealth/healthevent/InProgress/action"
+                        },
+                        {
+                          "field": "operationName",
+                          "equals": "Microsoft.Resourcehealth/healthevent/Resolved/action"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "actions": {
+                  "actionGroups": [
+                    {
+                      "actionGroupId": "[parameters('actionGroupId')]"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "ruleId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/activityLogAlerts', parameters('ruleName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'amr-notifications')]",
+        "[subscriptionResourceId(parameters('subscriptions')[copyIndex()].id, 'Microsoft.Resources/deployments', format('amr-rg-{0}', uniqueString(parameters('subscriptions')[copyIndex()].id, parameters('resourceGroupName'))))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[parameters('resourceGroupName')]"
+    },
+    "actionGroupId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'amr-notifications'), '2025-04-01').outputs.actionGroupId.value]"
+    },
+    "logicAppId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'amr-notifications'), '2025-04-01').outputs.logicAppId.value]"
+    },
+    "ruleIds": {
+      "type": "array",
+      "copy": {
+        "count": "[length(parameters('subscriptions'))]",
+        "input": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', parameters('subscriptions')[copyIndex()].id, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', format('amr-rule-{0}', uniqueString(parameters('subscriptions')[copyIndex()].id, parameters('resourceGroupName')))), '2025-04-01').outputs.ruleId.value]"
+      }
+    }
+  }
+}

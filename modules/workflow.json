@@ -1,0 +1,219 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "feishuWebhookUrl": {
+      "type": "SecureString"
+    },
+    "subscriptionNames": {
+      "type": "Object"
+    },
+    "resourceGroupName": {
+      "type": "String"
+    }
+  },
+  "triggers": {
+    "Receive_alert": {
+      "type": "Request",
+      "kind": "Http",
+      "inputs": {
+        "method": "POST",
+        "schema": {
+          "type": "object",
+          "required": [
+            "schemaId",
+            "data"
+          ],
+          "properties": {
+            "schemaId": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    }
+  },
+  "actions": {
+    "Event": {
+      "type": "Compose",
+      "inputs": "@coalesce(triggerBody()?['data']?['context']?['activityLog'], triggerBody()?['data']?['alertContext'], json('{}'))",
+      "runAfter": {}
+    },
+    "Metadata": {
+      "type": "Compose",
+      "inputs": "@coalesce(triggerBody()?['data']?['properties'], triggerBody()?['data']?['customProperties'], json('{}'))",
+      "runAfter": {
+        "Event": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Target": {
+      "type": "Compose",
+      "inputs": "@toLower(coalesce(outputs('Event')?['resourceId'], first(if(empty(triggerBody()?['data']?['essentials']?['alertTargetIDs']), createArray(''), triggerBody()?['data']?['essentials']?['alertTargetIDs']))))",
+      "runAfter": {
+        "Metadata": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Description": {
+      "type": "Compose",
+      "inputs": "@string(coalesce(outputs('Event')?['eventDescription'], outputs('Event')?['description'], outputs('Event')?['properties']?['details'], outputs('Event')?['properties']?['title'], ''))",
+      "runAfter": {
+        "Target": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Validate_resource_path": {
+      "type": "If",
+      "runAfter": {
+        "Description": [
+          "Succeeded"
+        ]
+      },
+      "expression": "@and(startsWith(outputs('Target'), '/subscriptions/'), equals(length(split(outputs('Target'), '/')), 9))",
+      "actions": {
+        "Validate_event": {
+          "type": "If",
+          "runAfter": {},
+          "expression": "@and(or(equals(triggerBody()?['schemaId'], 'Microsoft.Insights/activityLogs'), equals(triggerBody()?['schemaId'], 'azureMonitorCommonAlertSchema')), or(and(and(contains(parameters('subscriptionNames'), split(outputs('Target'), '/')[2]), equals(split(outputs('Target'), '/')[3], 'resourcegroups'), equals(split(outputs('Target'), '/')[5], 'providers')), equals(split(outputs('Target'), '/')[6], 'microsoft.cache'), equals(split(outputs('Target'), '/')[7], 'redisenterprise'), equals(toLower(coalesce(outputs('Event')?['eventSource'], '')), 'resourcehealth'), or(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action'), equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/resolved/action'))), and(and(contains(parameters('subscriptionNames'), split(outputs('Target'), '/')[2]), equals(split(outputs('Target'), '/')[3], 'resourcegroups'), equals(split(outputs('Target'), '/')[5], 'providers')), equals(split(outputs('Target'), '/')[4], toLower(parameters('resourceGroupName'))), equals(split(outputs('Target'), '/')[6], 'microsoft.insights'), equals(split(outputs('Target'), '/')[7], 'actiongroups'), equals(split(outputs('Target'), '/')[8], 'ag-amr-canary-signal'), equals(outputs('Metadata')?['testMode'], 'canary'), equals(toLower(coalesce(outputs('Event')?['eventSource'], '')), 'administrative'), equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.insights/actiongroups/write'), equals(toLower(coalesce(outputs('Event')?['status'], '')), 'succeeded'))))",
+          "actions": {
+            "Is_canary": {
+              "type": "Compose",
+              "inputs": "@and(and(contains(parameters('subscriptionNames'), split(outputs('Target'), '/')[2]), equals(split(outputs('Target'), '/')[3], 'resourcegroups'), equals(split(outputs('Target'), '/')[5], 'providers')), equals(split(outputs('Target'), '/')[4], toLower(parameters('resourceGroupName'))), equals(split(outputs('Target'), '/')[6], 'microsoft.insights'), equals(split(outputs('Target'), '/')[7], 'actiongroups'), equals(split(outputs('Target'), '/')[8], 'ag-amr-canary-signal'), equals(outputs('Metadata')?['testMode'], 'canary'), equals(toLower(coalesce(outputs('Event')?['eventSource'], '')), 'administrative'), equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.insights/actiongroups/write'), equals(toLower(coalesce(outputs('Event')?['status'], '')), 'succeeded'))",
+              "runAfter": {}
+            },
+            "Post_to_Feishu": {
+              "type": "Http",
+              "runAfter": {
+                "Is_canary": [
+                  "Succeeded"
+                ]
+              },
+              "inputs": {
+                "method": "POST",
+                "uri": "@parameters('feishuWebhookUrl')",
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "retryPolicy": {
+                  "type": "exponential",
+                  "count": 3,
+                  "interval": "PT10S"
+                },
+                "body": {
+                  "msg_type": "interactive",
+                  "card": {
+                    "config": {
+                      "wide_screen_mode": true
+                    },
+                    "header": {
+                      "template": "@if(outputs('Is_canary'), 'blue', if(not(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action')), 'green', if(contains(toLower(outputs('Description')), 'planned maintenance'), 'orange', 'blue')))",
+                      "title": {
+                        "tag": "plain_text",
+                        "content": "@concat(if(outputs('Is_canary'), '[TEST 通知链路验证] ', if(equals(outputs('Metadata')?['testMode'], 'history-replay'), '[TEST 历史回放] ', '')), if(outputs('Is_canary'), '提示', if(not(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action')), '已恢复', if(contains(toLower(outputs('Description')), 'planned maintenance'), '警告', '提示'))), '｜', if(outputs('Is_canary'), 'AMR 通知链路', if(contains(toLower(outputs('Description')), 'planned maintenance'), if(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action'), 'AMR 维护开始', 'AMR 维护结束'), 'AMR 健康事件（维护类型未确认）')), '｜', last(split(outputs('Target'), '/')))"
+                      }
+                    },
+                    "elements": [
+                      {
+                        "tag": "div",
+                        "text": {
+                          "tag": "lark_md",
+                          "content": "@concat('**时间（北京时间）**：', if(empty(outputs('Event')?['eventTimestamp']), '未提供', convertTimeZone(outputs('Event')?['eventTimestamp'], 'UTC', 'China Standard Time', 'yyyy-MM-dd HH:mm:ss')), '\n', '**实例**：', last(split(outputs('Target'), '/')), '\n', '**订阅**：', coalesce(parameters('subscriptionNames')?[split(outputs('Target'), '/')[2]], '未提供'), '\n', '**订阅 ID**：', split(outputs('Target'), '/')[2], '\n', '**资源组**：', split(outputs('Target'), '/')[4], '\n', '**阶段**：', if(outputs('Is_canary'), 'TEST canary（不是维护）', if(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action'), '开始/进行中', '结束')), '\n', '**事件状态**：', coalesce(outputs('Event')?['status'], '未提供'), '\n', '**Event ID**：', coalesce(outputs('Event')?['eventDataId'], '未提供'))"
+                        }
+                      },
+                      {
+                        "tag": "hr"
+                      },
+                      {
+                        "tag": "div",
+                        "text": {
+                          "tag": "lark_md",
+                          "content": "@concat(if(empty(outputs('Description')), '负载未提供原始维护说明，请查看 Activity Log；不以规则描述代替。', outputs('Description')), '\n\n本通知不代表提前预告；事件跨度不等于业务中断时长。')"
+                        }
+                      },
+                      {
+                        "tag": "action",
+                        "actions": [
+                          {
+                            "tag": "button",
+                            "type": "primary",
+                            "text": {
+                              "tag": "plain_text",
+                              "content": "在 Azure 门户中查看"
+                            },
+                            "url": "@concat('https://portal.azure.com/#resource', outputs('Target'))"
+                          }
+                        ]
+                      },
+                      {
+                        "tag": "note",
+                        "elements": [
+                          {
+                            "tag": "plain_text",
+                            "content": "Azure 告警 · 来源 AMR 维护 · ActivityLog"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              },
+              "runtimeConfiguration": {
+                "secureData": {
+                  "properties": [
+                    "inputs",
+                    "outputs"
+                  ]
+                }
+              }
+            },
+            "Verify_Feishu_result": {
+              "type": "If",
+              "runAfter": {
+                "Post_to_Feishu": [
+                  "Succeeded"
+                ]
+              },
+              "expression": "@equals(string(coalesce(body('Post_to_Feishu')?['code'], body('Post_to_Feishu')?['StatusCode'], -1)), '0')",
+              "actions": {
+                "Delivery_accepted": {
+                  "type": "Compose",
+                  "inputs": "@'Feishu returned business code 0; verify group delivery for acceptance.'",
+                  "runAfter": {}
+                }
+              },
+              "else": {
+                "actions": {
+                  "Delivery_failed": {
+                    "type": "Terminate",
+                    "runAfter": {},
+                    "inputs": {
+                      "runStatus": "Failed",
+                      "runError": {
+                        "code": "FeishuRejected",
+                        "message": "Feishu did not return a successful business code."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "actions": {}
+          }
+        }
+      },
+      "else": {
+        "actions": {}
+      }
+    }
+  },
+  "outputs": {}
+}

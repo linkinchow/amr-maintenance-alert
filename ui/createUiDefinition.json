@@ -1,0 +1,97 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "config": {
+      "isWizard": true,
+      "basics": {
+        "description": "**AMR 维护告警**：Azure Managed Redis 维护开始 / 结束时推送飞书卡片。在选中的每个订阅里各建一条活动日志告警规则，统一发到本订阅的 Action Group 和 Logic App。",
+        "location": {
+          "label": "资源组区域",
+          "visible": true
+        }
+      }
+    },
+    "basics": [
+      {
+        "name": "resourceGroupName",
+        "type": "Microsoft.Common.TextBox",
+        "label": "资源组名称",
+        "defaultValue": "rg-amr-alerts",
+        "constraints": {
+          "required": true,
+          "regex": "^[-\\w\\._\\(\\)]{1,90}$",
+          "validationMessage": "1-90 个字母、数字、-、_、.、()"
+        },
+        "toolTip": "当前订阅里放 Logic App 和 Action Group；每个被监控的订阅里也会建同名资源组，放该订阅的告警规则。不存在会自动创建。"
+      }
+    ],
+    "steps": [
+      {
+        "name": "notify",
+        "label": "飞书通知",
+        "elements": [
+          {
+            "name": "feishuWebhookUrl",
+            "type": "Microsoft.Common.PasswordBox",
+            "label": {
+              "password": "飞书 webhook",
+              "confirmPassword": "再次输入飞书 webhook（不显示）"
+            },
+            "constraints": {
+              "required": true,
+              "regex": "^https://open\\.(feishu\\.cn|larksuite\\.com)/open-apis/bot/v2/hook/.+$",
+              "validationMessage": "请输入飞书 / Lark 自定义机器人 webhook"
+            },
+            "options": {
+              "hideConfirmation": true
+            },
+            "toolTip": "飞书群自定义机器人的 webhook 地址，不需要配置签名校验。作为安全参数保存在 Logic App 中，部署输出里不会出现。"
+          }
+        ]
+      },
+      {
+        "name": "scope",
+        "label": "监控订阅",
+        "elements": [
+          {
+            "name": "subscriptionsApi",
+            "type": "Microsoft.Solutions.ArmApiControl",
+            "request": {
+              "method": "GET",
+              "path": "subscriptions?api-version=2022-12-01"
+            }
+          },
+          {
+            "name": "info",
+            "type": "Microsoft.Common.InfoBox",
+            "options": {
+              "style": "Info",
+              "text": "一条告警规则不能跨订阅，所以每个选中的订阅各建一条规则，覆盖该订阅当前和以后的所有 AMR。部署人需要对选中的订阅有创建资源组和告警规则的权限。"
+            }
+          },
+          {
+            "name": "subscriptionIds",
+            "type": "Microsoft.Common.DropDown",
+            "label": "要监控 AMR 的订阅",
+            "multiselect": true,
+            "selectAll": true,
+            "filter": true,
+            "constraints": {
+              "allowedValues": "[map(steps('scope').subscriptionsApi.value, (item) => parse(concat('{\"label\":\"', replace(item.displayName, '\"', ''), ' (', item.subscriptionId, ')\",\"value\":\"', item.subscriptionId, '\"}')))]",
+              "required": true
+            },
+            "toolTip": "卡片里显示订阅名称；不在这里的订阅即使有事件也不会推送。"
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "location": "[location()]",
+      "resourceGroupName": "[basics('resourceGroupName')]",
+      "feishuWebhookUrl": "[steps('notify').feishuWebhookUrl]",
+      "subscriptions": "[map(filter(steps('scope').subscriptionsApi.value, (item) => contains(steps('scope').subscriptionIds, item.subscriptionId)), (item) => parse(concat('{\"id\":\"', item.subscriptionId, '\",\"name\":\"', replace(item.displayName, '\"', ''), '\"}')))]"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+name: validate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same Bicep version as the one used to generate azuredeploy.json, so the comparison is exact.
+      - name: Install Bicep
+        run: az bicep install --version v0.44.1
+
+      - name: Build main.bicep
+        run: az bicep build -f main.bicep --outfile "$RUNNER_TEMP/built.json"
+
+      - name: Checks (JSON, azuredeploy.json and workflow.json up to date)
+        run: python3 scripts/ci_check.py "$RUNNER_TEMP/built.json"
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -v

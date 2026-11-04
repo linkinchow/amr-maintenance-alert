@@ -1,0 +1,26 @@
+{
+  "schemaId": "azureMonitorCommonAlertSchema",
+  "data": {
+    "essentials": {
+      "alertTargetIDs": [
+        "/subscriptions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/resourceGroups/rg-sample/providers/Microsoft.Cache/redisEnterprise/redis-sample-01"
+      ],
+      "description": "RULE description is not maintenance evidence",
+      "monitorCondition": "Fired"
+    },
+    "alertContext": {
+      "eventSource": "ResourceHealth",
+      "eventTimestamp": "2026-09-10T05:01:28.316131Z",
+      "eventDataId": "ffffffff-0000-0000-0000-000000000000",
+      "operationName": "Microsoft.Resourcehealth/healthevent/Resolved/action",
+      "status": "Succeeded",
+      "properties": null,
+      "caller": null,
+      "correlationId": "",
+      "eventDescription": "Planned maintenance has completed on this instance and your instance performed a failover."
+    },
+    "customProperties": {
+      "testMode": "history-replay"
+    }
+  }
+}

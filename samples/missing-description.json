@@ -1,0 +1,22 @@
+{
+  "schemaId": "Microsoft.Insights/activityLogs",
+  "data": {
+    "status": "Activated",
+    "context": {
+      "activityLog": {
+        "eventSource": "ResourceHealth",
+        "resourceId": "/subscriptions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/resourceGroups/rg-sample/providers/Microsoft.Cache/redisEnterprise/redis-sample-01",
+        "eventTimestamp": "2026-09-10T04:47:16.130835Z",
+        "eventDataId": "eeeeeeee-0000-0000-0000-000000000000",
+        "operationName": "Microsoft.Resourcehealth/healthevent/InProgress/action",
+        "status": "Started",
+        "properties": null,
+        "caller": null,
+        "correlationId": ""
+      }
+    },
+    "properties": {
+      "testMode": "history-replay"
+    }
+  }
+}
