@@ -59,8 +59,10 @@ module notifications 'modules/notifications.bicep' = {
   }
 }
 
+// This nested deployment is subscription-scoped and inherits the deployment location; a deployment with the same name
+// in another location fails (InvalidDeploymentLocation), so the name includes it to allow redeploying in another region.
 module ruleRg 'modules/resource-group.bicep' = [for sub in subscriptions: {
-  name: 'amr-rg-${uniqueString(sub.id, resourceGroupName)}'
+  name: 'amr-rg-${uniqueString(sub.id, resourceGroupName, deployment().location)}'
   scope: subscription(sub.id)
   params: {
     name: resourceGroupName

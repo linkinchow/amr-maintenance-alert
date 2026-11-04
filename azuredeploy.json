@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "2788963485878926095"
+      "templateHash": "6150976647397903881"
     }
   },
   "parameters": {
@@ -580,7 +580,7 @@
       },
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
-      "name": "[format('amr-rg-{0}', uniqueString(parameters('subscriptions')[copyIndex()].id, parameters('resourceGroupName')))]",
+      "name": "[format('amr-rg-{0}', uniqueString(parameters('subscriptions')[copyIndex()].id, parameters('resourceGroupName'), deployment().location))]",
       "subscriptionId": "[parameters('subscriptions')[copyIndex()].id]",
       "location": "[deployment().location]",
       "properties": {
@@ -745,7 +745,7 @@
       },
       "dependsOn": [
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'amr-notifications')]",
-        "[subscriptionResourceId(parameters('subscriptions')[copyIndex()].id, 'Microsoft.Resources/deployments', format('amr-rg-{0}', uniqueString(parameters('subscriptions')[copyIndex()].id, parameters('resourceGroupName'))))]"
+        "[subscriptionResourceId(parameters('subscriptions')[copyIndex()].id, 'Microsoft.Resources/deployments', format('amr-rg-{0}', uniqueString(parameters('subscriptions')[copyIndex()].id, parameters('resourceGroupName'), deployment().location)))]"
       ]
     }
   ],

@@ -56,6 +56,12 @@ class AmrTemplateTests(unittest.TestCase):
         self.assertEqual(params['resourceGroupName']['defaultValue'], 'rg-amr-alerts')
         self.assertIn('subscription()', json.dumps(params['subscriptions']['defaultValue']))
 
+    def test_subscription_scope_deployment_name_includes_location(self):
+        # Same name in another location fails with InvalidDeploymentLocation (found when redeploying in another region).
+        for resource in self.deploy['resources']:
+            if resource['type'] == 'Microsoft.Resources/deployments' and resource.get('location'):
+                self.assertIn('deployment().location', resource['name'])
+
     def test_ui_outputs_cover_required_parameters(self):
         outputs = load('ui/createUiDefinition.json')['parameters']['outputs']
         params = self.deploy['parameters']
