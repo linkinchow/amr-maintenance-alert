@@ -29,6 +29,12 @@ Azure Managed Redis（AMR）开始维护和维护结束时，把 Resource Health
 
 字段：时间（北京时间）、实例、订阅、订阅 ID、资源组、阶段、事件状态、Event ID；分隔线下是事件原文；“在 Azure 门户中查看”按钮；底部注明 `Azure 告警 · 来源 AMR 维护 · ActivityLog`。
 
+| 维护开始 | 维护结束 |
+|---|---|
+| ![维护开始卡片](docs/images/amr-card-start.png) | ![维护结束卡片](docs/images/amr-card-end.png) |
+
+截图为回放样例发出的 TEST 卡片，订阅名和订阅 ID 已替换为占位值。
+
 ## 部署
 
 ### Deploy to Azure

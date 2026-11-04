@@ -54,10 +54,16 @@
 
 ## 4. 方法一：Azure 门户
 
-1. 打开 Azure Managed Redis 实例，在左侧菜单选择 **Maintenance (Preview)**。
+1. 打开 Azure Managed Redis 实例，在左侧菜单选择 **Settings → Maintenance (Preview)**。
 2. 打开 **Custom schedule**。
-3. 为要维护的日子设置开始时间（UTC 整点）和时长；其他日子排除。
+3. 在要维护的日子那一行设置 **Duration in hours** / **Duration in minutes**，再在 **Scheduled window (UTC)** 选择开始时间（UTC 整点）；设置好的日子 Status 显示为 On，其他日子保持 Off。
 4. 保存。
+
+页面顶部的提示也说明了：这个计划只约束 Redis 自身的维护，不约束 Azure 更新底层平台的维护。
+
+![门户中的维护窗口设置](images/amr-maintenance-window-portal.png)
+
+截图仅示意页面布局，实例名已替换。图中设置的是周二到周四、UTC 19:00 起各 6 小时（北京时间周三到周五 03:00–09:00），与第 3 节的示例不同，请按自己的业务低峰设置。
 
 ## 5. 方法二：Azure CLI
 

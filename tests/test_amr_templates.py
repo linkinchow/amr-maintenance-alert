@@ -65,9 +65,10 @@ class AmrTemplateTests(unittest.TestCase):
         self.assertIn("contains(steps('scope').subscriptionIds", outputs['subscriptions'])
 
     def test_repository_has_only_placeholder_guids(self):
-        # Public repo: real IDs belong in git-ignored *.local.json only.
+        # Public repo: real IDs belong in git-ignored *.local.json only. Screenshots are masked by hand and reviewed visually.
         for path in ROOT.rglob('*'):
-            if not path.is_file() or '.git' in path.parts or '__pycache__' in path.parts or path.name.endswith('.local.json'):
+            if (not path.is_file() or '.git' in path.parts or '__pycache__' in path.parts
+                    or path.name.endswith('.local.json') or path.suffix.lower() == '.png'):
                 continue
             for guid in GUID.findall(path.read_text(encoding='utf-8')):
                 self.assertLessEqual(len(set(guid.lower().replace('-', '')) - {'0'}), 1, f'{path.relative_to(ROOT)}: {guid}')
