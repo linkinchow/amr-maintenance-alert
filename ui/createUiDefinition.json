@@ -6,7 +6,7 @@
     "config": {
       "isWizard": true,
       "basics": {
-        "description": "**AMR 维护告警**：Azure Managed Redis 维护开始 / 结束时推送飞书卡片。在选中的每个订阅里各建一条活动日志告警规则，统一发到本订阅的 Action Group 和 Logic App。",
+        "description": "**AMR 维护告警**：Azure Managed Redis 维护开始 / 结束时推送飞书卡片。\n\n下面的 **订阅** 是**部署订阅**，只放 Logic App 和 Action Group；要监控 AMR 的订阅在后面的“监控订阅”一步多选，每个选中的订阅各建一条活动日志告警规则，统一发到部署订阅的 Action Group。",
         "location": {
           "label": "资源组区域",
           "visible": true
@@ -68,7 +68,7 @@
             "type": "Microsoft.Common.InfoBox",
             "options": {
               "style": "Info",
-              "text": "一条告警规则不能跨订阅，所以每个选中的订阅各建一条规则，覆盖该订阅当前和以后的所有 AMR。部署人需要对选中的订阅有创建资源组和告警规则的权限。"
+              "text": "一条告警规则不能跨订阅，所以每个选中的订阅各建一条规则，覆盖该订阅当前和以后的所有 AMR。部署人需要对选中的订阅有创建资源组和告警规则的权限。全选会包含只有读权限的订阅：对这些订阅建规则会失败，整个部署显示失败（其他订阅已建好的规则会保留），所以只勾选有写权限的订阅。部署订阅不需要选在这里，除非它也有要监控的 AMR。"
             }
           },
           {
