@@ -123,7 +123,19 @@ The resources in the scope must be in the same subscription as the rule.
 | 连续限流 8 次（默认上限） | 8 次后运行失败，耗时约 7.5 分钟 |
 | 格式错误（9499） | 不重试，第 1 次后运行失败 |
 
-门户向导（`ui/createUiDefinition.json`）的显示和交互需要在门户中验证：发布前可以在 Create UI Definition Sandbox 预览，发布后用真实按钮走一遍。
+
+### 门户 Deploy to Azure 实测
+
+从 README 按钮进入门户向导，部署订阅选订阅 A，区域 East US 2，资源组 `rg-amr-alerts-test`，监控订阅勾选订阅 A 和订阅 B。
+
+| 项目 | 结果 |
+|---|---|
+| 第一次部署 | 校验失败：`InvalidDeploymentLocation`。在各订阅建资源组的嵌套部署是订阅级部署，名称原来只由订阅和资源组名决定；之前在 australiaeast 的测试留下了同名部署记录，换区域就冲突。修复：名称加入 `deployment().location`，并加了单元测试；用旧模板在 East US 2 复现了同样的错误，新模板校验通过 |
+| 修复后重新部署 | 成功 |
+| 向导三步 | 基本信息、飞书通知、监控订阅（多选）都能正常填写，参数汇总正确 |
+| 回读 | 两个订阅都建了资源组；部署订阅有 Logic App、Action Group、规则；另一个订阅只有规则。规则已启用，scope 为本订阅，指向部署订阅的 Action Group；Logic App 的订阅清单和显示名与勾选一致 |
+| 发送 | 通过这套部署发出 TEST 卡片，飞书一次返回业务码 0，群内收到 |
+| 清理 | 核对资源组名、scenario 标签和资源清单后删除两个订阅的 `rg-amr-alerts-test` |
 
 ## 六、已知边界
 
