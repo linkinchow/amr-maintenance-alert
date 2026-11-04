@@ -26,6 +26,11 @@ param subscriptions array = [
   }
 ]
 
+@description('Feishu rate limiting (code 11232 / HTTP 429): attempts per message before the run fails; the wait grows with each attempt (8 attempts take about 10 minutes).')
+@minValue(1)
+@maxValue(15)
+param feishuMaxAttempts int = 8
+
 @description('Create the alert rules enabled. Test deployments set false so real events do not reach a test group.')
 param ruleEnabled bool = true
 
@@ -50,6 +55,7 @@ module notifications 'modules/notifications.bicep' = {
     tags: tags
     feishuWebhookUrl: feishuWebhookUrl
     subscriptionNames: toObject(subscriptions, s => toLower(s.id), s => s.name)
+    feishuMaxAttempts: feishuMaxAttempts
   }
 }
 

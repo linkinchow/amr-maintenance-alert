@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "13659954957275996414"
+      "templateHash": "2788963485878926095"
     }
   },
   "parameters": {
@@ -50,6 +50,15 @@
       ],
       "metadata": {
         "description": "Monitored subscriptions: [{ id, name }]. name is shown in the card; the list is also the workflow allow-list."
+      }
+    },
+    "feishuMaxAttempts": {
+      "type": "int",
+      "defaultValue": 8,
+      "minValue": 1,
+      "maxValue": 15,
+      "metadata": {
+        "description": "Feishu rate limiting (code 11232 / HTTP 429): attempts per message before the run fails; the wait grows with each attempt (8 attempts take about 10 minutes)."
       }
     },
     "ruleEnabled": {
@@ -103,6 +112,9 @@
           },
           "subscriptionNames": {
             "value": "[toObject(parameters('subscriptions'), lambda('s', toLower(lambdaVariables('s').id)), lambda('s', lambdaVariables('s').name))]"
+          },
+          "feishuMaxAttempts": {
+            "value": "[parameters('feishuMaxAttempts')]"
           }
         },
         "template": {
@@ -112,7 +124,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "13144367389901200501"
+              "templateHash": "6812389236748132754"
             }
           },
           "parameters": {
@@ -138,6 +150,13 @@
               "metadata": {
                 "description": "Lower-case subscription id -> display name; also the workflow allow-list."
               }
+            },
+            "feishuMaxAttempts": {
+              "type": "int",
+              "defaultValue": 8,
+              "metadata": {
+                "description": "Feishu rate limiting (code 11232 / HTTP 429): attempts per message, with a growing wait between attempts."
+              }
             }
           },
           "variables": {
@@ -153,6 +172,10 @@
                 },
                 "resourceGroupName": {
                   "type": "String"
+                },
+                "feishuMaxAttempts": {
+                  "type": "Int",
+                  "defaultValue": 8
                 }
               },
               "triggers": {
@@ -212,10 +235,44 @@
                     ]
                   }
                 },
+                "Init_attempt": {
+                  "type": "InitializeVariable",
+                  "runAfter": {
+                    "Description": [
+                      "Succeeded"
+                    ]
+                  },
+                  "inputs": {
+                    "variables": [
+                      {
+                        "name": "attempt",
+                        "type": "integer",
+                        "value": 0
+                      }
+                    ]
+                  }
+                },
+                "Init_send_state": {
+                  "type": "InitializeVariable",
+                  "runAfter": {
+                    "Init_attempt": [
+                      "Succeeded"
+                    ]
+                  },
+                  "inputs": {
+                    "variables": [
+                      {
+                        "name": "sendState",
+                        "type": "string",
+                        "value": "pending"
+                      }
+                    ]
+                  }
+                },
                 "Validate_resource_path": {
                   "type": "If",
                   "runAfter": {
-                    "Description": [
+                    "Init_send_state": [
                       "Succeeded"
                     ]
                   },
@@ -231,103 +288,192 @@
                           "inputs": "@and(and(contains(parameters('subscriptionNames'), split(outputs('Target'), '/')[2]), equals(split(outputs('Target'), '/')[3], 'resourcegroups'), equals(split(outputs('Target'), '/')[5], 'providers')), equals(split(outputs('Target'), '/')[4], toLower(parameters('resourceGroupName'))), equals(split(outputs('Target'), '/')[6], 'microsoft.insights'), equals(split(outputs('Target'), '/')[7], 'actiongroups'), equals(split(outputs('Target'), '/')[8], 'ag-amr-canary-signal'), equals(outputs('Metadata')?['testMode'], 'canary'), equals(toLower(coalesce(outputs('Event')?['eventSource'], '')), 'administrative'), equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.insights/actiongroups/write'), equals(toLower(coalesce(outputs('Event')?['status'], '')), 'succeeded'))",
                           "runAfter": {}
                         },
-                        "Post_to_Feishu": {
-                          "type": "Http",
+                        "Send_with_retry": {
+                          "type": "Until",
                           "runAfter": {
                             "Is_canary": [
                               "Succeeded"
                             ]
                           },
-                          "inputs": {
-                            "method": "POST",
-                            "uri": "@parameters('feishuWebhookUrl')",
-                            "headers": {
-                              "Content-Type": "application/json"
-                            },
-                            "retryPolicy": {
-                              "type": "exponential",
-                              "count": 3,
-                              "interval": "PT10S"
-                            },
-                            "body": {
-                              "msg_type": "interactive",
-                              "card": {
-                                "config": {
-                                  "wide_screen_mode": true
+                          "expression": "@or(not(equals(variables('sendState'), 'pending')), greaterOrEquals(variables('attempt'), parameters('feishuMaxAttempts')))",
+                          "limit": {
+                            "count": 20,
+                            "timeout": "PT1H"
+                          },
+                          "actions": {
+                            "Post_to_Feishu": {
+                              "type": "Http",
+                              "runAfter": {},
+                              "inputs": {
+                                "method": "POST",
+                                "uri": "@parameters('feishuWebhookUrl')",
+                                "headers": {
+                                  "Content-Type": "application/json"
                                 },
-                                "header": {
-                                  "template": "@if(outputs('Is_canary'), 'blue', if(not(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action')), 'green', if(contains(toLower(outputs('Description')), 'planned maintenance'), 'orange', 'blue')))",
-                                  "title": {
-                                    "tag": "plain_text",
-                                    "content": "@concat(if(outputs('Is_canary'), '[TEST 通知链路验证] ', if(equals(outputs('Metadata')?['testMode'], 'history-replay'), '[TEST 历史回放] ', '')), if(outputs('Is_canary'), '提示', if(not(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action')), '已恢复', if(contains(toLower(outputs('Description')), 'planned maintenance'), '警告', '提示'))), '｜', if(outputs('Is_canary'), 'AMR 通知链路', if(contains(toLower(outputs('Description')), 'planned maintenance'), if(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action'), 'AMR 维护开始', 'AMR 维护结束'), 'AMR 健康事件（维护类型未确认）')), '｜', last(split(outputs('Target'), '/')))"
-                                  }
+                                "retryPolicy": {
+                                  "type": "exponential",
+                                  "count": 3,
+                                  "interval": "PT10S"
                                 },
-                                "elements": [
-                                  {
-                                    "tag": "div",
-                                    "text": {
-                                      "tag": "lark_md",
-                                      "content": "@concat('**时间（北京时间）**：', if(empty(outputs('Event')?['eventTimestamp']), '未提供', convertTimeZone(outputs('Event')?['eventTimestamp'], 'UTC', 'China Standard Time', 'yyyy-MM-dd HH:mm:ss')), '\n', '**实例**：', last(split(outputs('Target'), '/')), '\n', '**订阅**：', coalesce(parameters('subscriptionNames')?[split(outputs('Target'), '/')[2]], '未提供'), '\n', '**订阅 ID**：', split(outputs('Target'), '/')[2], '\n', '**资源组**：', split(outputs('Target'), '/')[4], '\n', '**阶段**：', if(outputs('Is_canary'), 'TEST canary（不是维护）', if(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action'), '开始/进行中', '结束')), '\n', '**事件状态**：', coalesce(outputs('Event')?['status'], '未提供'), '\n', '**Event ID**：', coalesce(outputs('Event')?['eventDataId'], '未提供'))"
-                                    }
-                                  },
-                                  {
-                                    "tag": "hr"
-                                  },
-                                  {
-                                    "tag": "div",
-                                    "text": {
-                                      "tag": "lark_md",
-                                      "content": "@concat(if(empty(outputs('Description')), '负载未提供原始维护说明，请查看 Activity Log；不以规则描述代替。', outputs('Description')), '\n\n本通知不代表提前预告；事件跨度不等于业务中断时长。')"
-                                    }
-                                  },
-                                  {
-                                    "tag": "action",
-                                    "actions": [
-                                      {
-                                        "tag": "button",
-                                        "type": "primary",
-                                        "text": {
-                                          "tag": "plain_text",
-                                          "content": "在 Azure 门户中查看"
-                                        },
-                                        "url": "@concat('https://portal.azure.com/#resource', outputs('Target'))"
+                                "body": {
+                                  "msg_type": "interactive",
+                                  "card": {
+                                    "config": {
+                                      "wide_screen_mode": true
+                                    },
+                                    "header": {
+                                      "template": "@if(outputs('Is_canary'), 'blue', if(not(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action')), 'green', if(contains(toLower(outputs('Description')), 'planned maintenance'), 'orange', 'blue')))",
+                                      "title": {
+                                        "tag": "plain_text",
+                                        "content": "@concat(if(outputs('Is_canary'), '[TEST 通知链路验证] ', if(equals(outputs('Metadata')?['testMode'], 'history-replay'), '[TEST 历史回放] ', '')), if(outputs('Is_canary'), '提示', if(not(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action')), '已恢复', if(contains(toLower(outputs('Description')), 'planned maintenance'), '警告', '提示'))), '｜', if(outputs('Is_canary'), 'AMR 通知链路', if(contains(toLower(outputs('Description')), 'planned maintenance'), if(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action'), 'AMR 维护开始', 'AMR 维护结束'), 'AMR 健康事件（维护类型未确认）')), '｜', last(split(outputs('Target'), '/')))"
                                       }
-                                    ]
-                                  },
-                                  {
-                                    "tag": "note",
+                                    },
                                     "elements": [
                                       {
-                                        "tag": "plain_text",
-                                        "content": "Azure 告警 · 来源 AMR 维护 · ActivityLog"
+                                        "tag": "div",
+                                        "text": {
+                                          "tag": "lark_md",
+                                          "content": "@concat('**时间（北京时间）**：', if(empty(outputs('Event')?['eventTimestamp']), '未提供', convertTimeZone(outputs('Event')?['eventTimestamp'], 'UTC', 'China Standard Time', 'yyyy-MM-dd HH:mm:ss')), '\n', '**实例**：', last(split(outputs('Target'), '/')), '\n', '**订阅**：', coalesce(parameters('subscriptionNames')?[split(outputs('Target'), '/')[2]], '未提供'), '\n', '**订阅 ID**：', split(outputs('Target'), '/')[2], '\n', '**资源组**：', split(outputs('Target'), '/')[4], '\n', '**阶段**：', if(outputs('Is_canary'), 'TEST canary（不是维护）', if(equals(toLower(coalesce(outputs('Event')?['operationName'], '')), 'microsoft.resourcehealth/healthevent/inprogress/action'), '开始/进行中', '结束')), '\n', '**事件状态**：', coalesce(outputs('Event')?['status'], '未提供'), '\n', '**Event ID**：', coalesce(outputs('Event')?['eventDataId'], '未提供'))"
+                                        }
+                                      },
+                                      {
+                                        "tag": "hr"
+                                      },
+                                      {
+                                        "tag": "div",
+                                        "text": {
+                                          "tag": "lark_md",
+                                          "content": "@concat(if(empty(outputs('Description')), '负载未提供原始维护说明，请查看 Activity Log；不以规则描述代替。', outputs('Description')), '\n\n本通知不代表提前预告；事件跨度不等于业务中断时长。')"
+                                        }
+                                      },
+                                      {
+                                        "tag": "action",
+                                        "actions": [
+                                          {
+                                            "tag": "button",
+                                            "type": "primary",
+                                            "text": {
+                                              "tag": "plain_text",
+                                              "content": "在 Azure 门户中查看"
+                                            },
+                                            "url": "@concat('https://portal.azure.com/#resource', outputs('Target'))"
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "tag": "note",
+                                        "elements": [
+                                          {
+                                            "tag": "plain_text",
+                                            "content": "Azure 告警 · 来源 AMR 维护 · ActivityLog"
+                                          }
+                                        ]
                                       }
                                     ]
                                   }
+                                }
+                              },
+                              "runtimeConfiguration": {
+                                "secureData": {
+                                  "properties": [
+                                    "inputs",
+                                    "outputs"
+                                  ]
+                                }
+                              }
+                            },
+                            "Count_attempt": {
+                              "type": "IncrementVariable",
+                              "inputs": {
+                                "name": "attempt",
+                                "value": 1
+                              },
+                              "runAfter": {
+                                "Post_to_Feishu": [
+                                  "Succeeded",
+                                  "Failed",
+                                  "TimedOut"
                                 ]
                               }
-                            }
-                          },
-                          "runtimeConfiguration": {
-                            "secureData": {
-                              "properties": [
-                                "inputs",
-                                "outputs"
-                              ]
+                            },
+                            "Check_result": {
+                              "type": "If",
+                              "runAfter": {
+                                "Count_attempt": [
+                                  "Succeeded"
+                                ]
+                              },
+                              "expression": "@and(equals(actions('Post_to_Feishu')?['status'], 'Succeeded'), equals(string(coalesce(body('Post_to_Feishu')?['code'], body('Post_to_Feishu')?['StatusCode'], -1)), '0'))",
+                              "actions": {
+                                "Mark_sent": {
+                                  "type": "SetVariable",
+                                  "inputs": {
+                                    "name": "sendState",
+                                    "value": "sent"
+                                  },
+                                  "runAfter": {}
+                                }
+                              },
+                              "else": {
+                                "actions": {
+                                  "Rate_limited": {
+                                    "type": "If",
+                                    "runAfter": {},
+                                    "expression": "@or(equals(string(coalesce(body('Post_to_Feishu')?['code'], body('Post_to_Feishu')?['StatusCode'], -1)), '11232'), equals(outputs('Post_to_Feishu')?['statusCode'], 429))",
+                                    "actions": {
+                                      "Back_off": {
+                                        "type": "If",
+                                        "runAfter": {},
+                                        "expression": "@less(variables('attempt'), parameters('feishuMaxAttempts'))",
+                                        "actions": {
+                                          "Wait": {
+                                            "type": "Wait",
+                                            "runAfter": {},
+                                            "inputs": {
+                                              "interval": {
+                                                "count": "@add(mul(15, variables('attempt')), rand(0, 15))",
+                                                "unit": "Second"
+                                              }
+                                            }
+                                          }
+                                        },
+                                        "else": {
+                                          "actions": {}
+                                        }
+                                      }
+                                    },
+                                    "else": {
+                                      "actions": {
+                                        "Mark_failed": {
+                                          "type": "SetVariable",
+                                          "inputs": {
+                                            "name": "sendState",
+                                            "value": "failed"
+                                          },
+                                          "runAfter": {}
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
                             }
                           }
                         },
                         "Verify_Feishu_result": {
                           "type": "If",
                           "runAfter": {
-                            "Post_to_Feishu": [
-                              "Succeeded"
+                            "Send_with_retry": [
+                              "Succeeded",
+                              "Failed",
+                              "TimedOut"
                             ]
                           },
-                          "expression": "@equals(string(coalesce(body('Post_to_Feishu')?['code'], body('Post_to_Feishu')?['StatusCode'], -1)), '0')",
+                          "expression": "@equals(variables('sendState'), 'sent')",
                           "actions": {
                             "Delivery_accepted": {
                               "type": "Compose",
-                              "inputs": "@'Feishu returned business code 0; verify group delivery for acceptance.'",
+                              "inputs": "@concat('Feishu returned business code 0 after ', string(variables('attempt')), ' attempt(s); verify group delivery for acceptance.')",
                               "runAfter": {}
                             }
                           },
@@ -340,7 +486,7 @@
                                   "runStatus": "Failed",
                                   "runError": {
                                     "code": "FeishuRejected",
-                                    "message": "Feishu did not return a successful business code."
+                                    "message": "@concat('Feishu did not return business code 0 after ', string(variables('attempt')), ' attempt(s).')"
                                   }
                                 }
                               }
@@ -380,6 +526,9 @@
                   },
                   "resourceGroupName": {
                     "value": "[resourceGroup().name]"
+                  },
+                  "feishuMaxAttempts": {
+                    "value": "[parameters('feishuMaxAttempts')]"
                   }
                 }
               }

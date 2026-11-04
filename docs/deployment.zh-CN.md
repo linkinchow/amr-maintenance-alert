@@ -103,7 +103,8 @@ unset FEISHU_WEBHOOK_URL
 ```
 
 - 一次部署在每个订阅的同名资源组里新建或更新 `ala-amr-health-events`，并把订阅清单写进 Logic App 的允许清单（`subscriptionNames`）。新增订阅时，加到 `config.local.json` 里，重新生成参数文件后再部署一次即可。
-- 模板只输出资源 ID，不输出 callback 或 webhook。HTTP 动作开启了 secure inputs/outputs。HTTP 成功后还要检查飞书 `code` 或 `StatusCode` 为 0，非零或缺失时工作流标为失败。
+- 模板只输出资源 ID，不输出 callback 或 webhook。HTTP 动作开启了 secure inputs/outputs。HTTP 成功后还要检查飞书 `code` 或 `StatusCode` 为 0。
+- 飞书限流（业务码 11232 或 HTTP 429）时，`Send_with_retry` 循环等待后重发同一张卡片：第 n 次失败后等 15n 到 15n+15 秒，最多 `feishuMaxAttempts` 次（默认 8，约 10 分钟）。其他非零业务码不重试。最终没发出去时 `Delivery_failed` 把运行标为失败，错误信息里有尝试次数；成功时 `Delivery_accepted` 的输出里也有尝试次数。
 - 默认资源名与 2026-09 首次部署时一致（`rg-amr-alerts`、`logic-amr-maintenance-feishu`、`ag-amr-maintenance-feishu`、`ala-amr-health-events`）。现有环境可以用本模板原地升级，升级前先跑 what-if 确认。
 
 ## 5. 测试实例

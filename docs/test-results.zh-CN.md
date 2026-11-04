@@ -111,6 +111,18 @@ The resources in the scope must be in the same subscription as the rule.
 
 测试结束后，核对标签后删除了两个订阅的 `rg-amr-alerts-test`。
 
+### 发布后实测与飞书限流重试
+
+推送到 GitHub 后，用按钮使用的 raw 模板地址（`--template-uri`）部署测试实例：what-if 只有新建，部署成功，两个订阅各 1 条规则。回放时有 1 张卡片 HTTP 200 但飞书业务码非 0（原因不可见，重发成功），据此参照 azure-alert 加入限流重试，并用模拟接收端验证：
+
+| 模拟场景 | 结果 |
+|---|---|
+| 不限流 | 第 1 次成功 |
+| 限流一次（11232） | 第 2 次成功，耗时 24 秒 |
+| 始终限流，`feishuMaxAttempts=3` | 3 次后运行失败，耗时 64 秒，错误信息含尝试次数 |
+| 连续限流 8 次（默认上限） | 8 次后运行失败，耗时约 7.5 分钟 |
+| 格式错误（9499） | 不重试，第 1 次后运行失败 |
+
 门户向导（`ui/createUiDefinition.json`）的显示和交互需要在门户中验证：发布前可以在 Create UI Definition Sandbox 预览，发布后用真实按钮走一遍。
 
 ## 六、已知边界

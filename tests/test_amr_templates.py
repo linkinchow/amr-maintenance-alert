@@ -38,7 +38,9 @@ class AmrTemplateTests(unittest.TestCase):
         self.deploy = load('azuredeploy.json')
         self.notifications = nested(self.deploy, 'amr-notifications')
         self.rule = nested(self.deploy, 'amr-rule')['resources'][0]
-        self.card = self.send['Post_to_Feishu']['inputs']['body']
+        self.retry = self.send['Send_with_retry']
+        self.post = self.retry['actions']['Post_to_Feishu']
+        self.card = self.post['inputs']['body']
 
     def test_generated_workflow_and_azuredeploy_are_current(self):
         self.assertEqual(load('modules/workflow.json'), self.workflow)
@@ -81,7 +83,7 @@ class AmrTemplateTests(unittest.TestCase):
         for outputs in (self.deploy['outputs'], self.notifications['outputs']):
             self.assertNotIn('callback', json.dumps(outputs).lower())
             self.assertNotIn('feishuWebhookUrl', json.dumps(outputs))
-        self.assertEqual(self.send['Post_to_Feishu']['runtimeConfiguration']['secureData']['properties'], ['inputs','outputs'])
+        self.assertEqual(self.post['runtimeConfiguration']['secureData']['properties'], ['inputs','outputs'])
 
     def test_both_event_schemas_accepted_and_rule_description_not_used(self):
         value = json.dumps(self.actions)
@@ -107,7 +109,7 @@ class AmrTemplateTests(unittest.TestCase):
         self.assertIn('TEST 历史回放', title)
 
     def test_stage_is_not_monitor_condition(self):
-        post = json.dumps(self.send['Post_to_Feishu'], ensure_ascii=False)
+        post = json.dumps(self.post, ensure_ascii=False)
         self.assertIn('AMR 维护开始', post)
         self.assertIn('AMR 维护结束', post)
         self.assertNotIn('monitorCondition', post)
@@ -115,11 +117,32 @@ class AmrTemplateTests(unittest.TestCase):
         self.assertIn('维护类型未确认', post)
 
     def test_feishu_business_failure_is_not_success(self):
+        check = self.retry['actions']['Check_result']
+        self.assertIn("body('Post_to_Feishu')?['code']", check['expression'])
+        self.assertIn("body('Post_to_Feishu')?['StatusCode']", check['expression'])
+        self.assertIn("-1)), '0')", check['expression'])
+        self.assertIn("actions('Post_to_Feishu')?['status'], 'Succeeded'", check['expression'])
         action = self.send['Verify_Feishu_result']
-        self.assertIn("body('Post_to_Feishu')?['code']", action['expression'])
-        self.assertIn("body('Post_to_Feishu')?['StatusCode']", action['expression'])
-        self.assertIn("-1)), '0')", action['expression'])
+        self.assertEqual(action['expression'], "@equals(variables('sendState'), 'sent')")
+        self.assertEqual(action['runAfter'], {'Send_with_retry': ['Succeeded', 'Failed', 'TimedOut']})
         self.assertEqual(action['else']['actions']['Delivery_failed']['inputs']['runStatus'], 'Failed')
+
+    def test_rate_limited_messages_are_resent_with_backoff(self):
+        self.assertIn("parameters('feishuMaxAttempts')", self.retry['expression'])
+        self.assertIn("not(equals(variables('sendState'), 'pending'))", self.retry['expression'])
+        self.assertEqual(self.workflow['parameters']['feishuMaxAttempts']['defaultValue'], 8)
+        self.assertEqual(self.retry['actions']['Count_attempt']['runAfter'], {'Post_to_Feishu': ['Succeeded', 'Failed', 'TimedOut']})
+        other = self.retry['actions']['Check_result']['else']['actions']['Rate_limited']
+        self.assertIn("'11232'", other['expression'])
+        self.assertIn("['statusCode'], 429", other['expression'])
+        wait = other['actions']['Back_off']['actions']['Wait']['inputs']['interval']
+        self.assertEqual(wait['unit'], 'Second')
+        self.assertIn("mul(15, variables('attempt'))", wait['count'])
+        # Any other rejection (bad format, keyword, signature...) fails at once instead of retrying.
+        self.assertEqual(other['else']['actions']['Mark_failed']['inputs'], {'name': 'sendState', 'value': 'failed'})
+        for name in ('Init_attempt', 'Init_send_state'):
+            self.assertEqual(self.actions[name]['type'], 'InitializeVariable')
+        self.assertEqual(self.deploy['parameters']['feishuMaxAttempts']['maxValue'], 15)
 
     def test_card_layout_matches_azure_alert(self):
         card = self.card['card']

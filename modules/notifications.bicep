@@ -12,6 +12,9 @@ param feishuWebhookUrl string
 @description('Lower-case subscription id -> display name; also the workflow allow-list.')
 param subscriptionNames object
 
+@description('Feishu rate limiting (code 11232 / HTTP 429): attempts per message, with a growing wait between attempts.')
+param feishuMaxAttempts int = 8
+
 resource workflow 'Microsoft.Logic/workflows@2019-05-01' = {
   name: logicAppName
   location: location
@@ -28,6 +31,9 @@ resource workflow 'Microsoft.Logic/workflows@2019-05-01' = {
       }
       resourceGroupName: {
         value: resourceGroup().name
+      }
+      feishuMaxAttempts: {
+        value: feishuMaxAttempts
       }
     }
   }

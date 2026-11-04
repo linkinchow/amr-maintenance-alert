@@ -63,6 +63,7 @@ az deployment sub create --subscription <deployment-subscription-id> --location 
 | `resourceGroupName` | 默认 `rg-amr-alerts`，部署订阅和每个被监控订阅都用这个名字 |
 | `logicAppName` / `actionGroupName` / `ruleName` | 默认与已有部署一致，可原地升级 |
 | `ruleEnabled` | 默认 `true`；测试实例设为 `false`，避免真实事件发到测试群 |
+| `feishuMaxAttempts` | 默认 `8`：飞书限流时每条消息最多发送几次（1–15） |
 
 ## 目录
 
@@ -130,6 +131,7 @@ cp config.example.json config.local.json
 - 原文明确包含 Planned maintenance 才称为维护；缺少原文时也会发卡片，标为“维护类型未确认”。绝不把规则描述当成维护原文。
 - Action Group 用原生活动日志格式（`useCommonAlertSchema=false`），工作流也兼容 Common Alert Schema。
 - 活动日志告警是无状态的，结束事件也会产生 Fired 实例。
+- 飞书限流（业务码 11232 或 HTTP 429）时等待后重发同一张卡片，等待时间逐次加长（15–30 秒、30–45 秒……），默认最多 8 次，约 10 分钟；其他拒收（如格式错误 9499）不重试。最终没发出去的，Logic App 这次运行标为失败。
 - 不做持久化去重：Azure 投递或 HTTP 重试可能导致重复卡片，用 Event ID 辨认。
 - 只通知开始和结束，不是提前预告；实测从事件发生到 Logic App 开始处理约 2–7 分钟，不保证在故障转移前送达。
 
