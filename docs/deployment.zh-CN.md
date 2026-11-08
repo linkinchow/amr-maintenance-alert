@@ -106,7 +106,7 @@ unset FEISHU_WEBHOOK_URL
 - 模板只输出资源 ID，不输出 callback 或 webhook。HTTP 动作开启了 secure inputs/outputs。HTTP 成功后还要检查飞书 `code` 或 `StatusCode` 为 0。
 - 飞书限流（业务码 11232 或 HTTP 429）时，`Send_with_retry` 循环等待后重发同一张卡片：第 n 次失败后等 15n 到 15n+15 秒，最多 `feishuMaxAttempts` 次（默认 8，约 10 分钟）。其他非零业务码不重试。最终没发出去时 `Delivery_failed` 把运行标为失败，错误信息里有尝试次数；成功时 `Delivery_accepted` 的输出里也有尝试次数。
 - 自检（可选，参数 `selfMonitorEmails`）：`modules/self-monitor.bicep` 建只含邮件接收人的 Action Group 和指标告警 `<Logic App 名>-runs-failed`（RunsFailed，Total > 0，窗口 15 分钟，每 5 分钟评估）。不复用通知 Action Group：一是飞书故障时自检也会发不出去，二是工作流只放行 AMR 健康事件，指标告警负载会被跳过。
-- 默认资源名与 2026-09 首次部署时一致（`rg-amr-alerts`、`logic-amr-maintenance-feishu`、`ag-amr-maintenance-feishu`、`ala-amr-health-events`）。正式环境已于 2026-11-04 用本模板原地升级（部署名 `amr-maintenance-alerts`，区域 australiaeast）；以后更新沿用同一部署名和区域，先跑 what-if 确认。
+- 默认资源名与 2026-09 首次部署时一致（`rg-amr-alerts`、`logic-amr-maintenance-feishu`、`ag-amr-maintenance-feishu`、`ala-amr-health-events`）。正式环境已于 2026-11-04 用本模板原地升级（部署名 `amr-maintenance-alerts`，区域 australiaeast）；以后更新沿用同一部署名和区域，先跑 what-if 确认。2026-11-09 同一部署加上了自检告警（`selfMonitorEmails` 填运维邮箱）；以后更新时要继续传这个参数，否则不会更新、也不会删除已有的自检资源。
 
 ## 5. 测试实例
 
