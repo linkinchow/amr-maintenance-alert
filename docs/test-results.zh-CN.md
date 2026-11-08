@@ -141,6 +141,22 @@ The resources in the scope must be in the same subscription as the rule.
 
 2026-11-04 用本模板原地升级正式环境（订阅 A、B 的 `rg-amr-alerts`）：what-if 全部为修改，没有新建或删除；规则只变更 `managedBy` 标签，条件和 scope 不变；Logic App 换成卡片 + 限流重试的定义；Action Group 刷新 callback。部署成功后回读：两条规则已启用、条件与升级前一致、指向原 Action Group；Logic App 订阅清单正确；Action Group 只有这个 Logic App 接收器、原生 schema、无邮件接收器。经正式 Logic App 回放一张 TEST 卡片，飞书一次返回业务码 0。
 
+### 自检告警（Logic App 失败运行 → 邮件）
+
+测试实例部署时传入 `selfMonitorEmails`，飞书换成始终返回格式错误（9499）的模拟接收端：
+
+| 项目 | 结果 |
+|---|---|
+| 部署 | 另建只发邮件的 Action Group（1 个邮件接收人，没有 Logic App / webhook 接收人）和指标告警 `<Logic App 名>-runs-failed` |
+| 制造失败 | 回放 1 张卡片，飞书拒收，运行失败 |
+| 告警 | 约 7 分钟后告警 Fired，告警历史显示邮件 Action Group 已执行 |
+| 邮件 | 收件人收到 “Fired:Sev2 Azure Monitor Alert …-runs-failed” 邮件，以及加入 Action Group 的通知邮件 |
+| 清理 | 核对标签和资源清单后删除测试资源组 |
+
+### AMR 健康事件类型（2026-11-09 只读核对）
+
+有 AMR 的 3 个订阅，近 90 天 `Microsoft.Cache` 的 Resource Health 活动日志共 78 条（21 个实例，含已删除）：InProgress / Started 39 条、Resolved / Succeeded 39 条，原文只有 “Planned maintenance has started / has completed …”，level 均为 Informational，cause、type、title 为空。没有出现 Activated、Updated 或其他原文，所以现有规则只收 InProgress / Resolved 不会漏掉已观察到的事件。不受维护窗口约束的维护（主机 OS、网络、紧急安全补丁）是否产生事件，事件里没有可区分的字段，文档也没有说明，需要向产品组确认。
+
 ## 六、已知边界
 
 - 是维护开始/结束通知，不是提前预告；事件周期不等于业务中断时长。加上 2–7 分钟投递延迟，“开始”消息可能晚于 failover。

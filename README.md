@@ -16,6 +16,7 @@ Azure Managed Redis（AMR）开始维护和维护结束时，把 Resource Health
 
 - 每个被监控订阅一条 `ala-amr-health-events`，覆盖该订阅当前和以后所有 `Microsoft.Cache/redisEnterprise` 的 InProgress／Resolved 健康事件。一条规则不能跨订阅，所以按订阅各建一条。
 - 部署订阅里放 `ag-amr-maintenance-feishu` 和 `logic-amr-maintenance-feishu`，发到专用飞书机器人。
+- 所有订阅都用同一个资源组名（参数 `resourceGroupName`，默认 `rg-amr-alerts`），不存在时自动创建。规则所在资源组与 AMR 所在资源组无关，规则覆盖整个订阅。详见[客户部署指南](docs/customer-deployment.zh-CN.md#资源放在哪里)。
 - 一次订阅级部署（`azuredeploy.json`）建好全部资源，被监控订阅在部署向导里多选。
 
 ## 卡片
@@ -42,7 +43,7 @@ Azure Managed Redis（AMR）开始维护和维护结束时，把 Resource Health
 向导共三步：
 
 1. **基本信息**：这里的“订阅”是部署订阅（只放 Logic App 和 Action Group），再选区域、资源组名（默认 `rg-amr-alerts`）。
-2. **飞书通知**：飞书 webhook（安全参数）。
+2. **飞书通知**：飞书 webhook（安全参数）；可选填写自检告警邮箱。
 3. **监控订阅**：可搜索、可全选的订阅多选框，每个选中的订阅建一条规则。部署订阅也有 AMR 时同样勾上。
 
 部署人需要对选中的每个订阅有创建资源组和告警规则的权限；全选会包含只读订阅，对它们建规则会失败，所以只勾选有写权限的订阅。
@@ -64,6 +65,7 @@ az deployment sub create --subscription <deployment-subscription-id> --location 
 | `logicAppName` / `actionGroupName` / `ruleName` | 默认与已有部署一致，可原地升级 |
 | `ruleEnabled` | 默认 `true`；测试实例设为 `false`，避免真实事件发到测试群 |
 | `feishuMaxAttempts` | 默认 `8`：飞书限流时每条消息最多发送几次（1–15） |
+| `selfMonitorEmails` | 自检告警邮箱数组，默认空（不创建）。填写后另建只发邮件的 Action Group `ag-amr-selfmonitor`，Logic App 15 分钟内有失败运行就发邮件 |
 
 ## 目录
 
@@ -72,6 +74,7 @@ main.bicep                       入口（subscription 作用域）
 modules/notifications.bicep      Logic App + Action Group
 modules/workflow.json            Logic App 定义（scripts/build_templates.py 生成）
 modules/subscription-alert.bicep 订阅级活动日志告警规则
+modules/self-monitor.bicep       可选自检：邮件 Action Group + Logic App 失败运行告警
 modules/resource-group.bicep     各订阅的资源组
 azuredeploy.json                 az bicep build 生成，供 Deploy to Azure 使用
 ui/createUiDefinition.json       门户部署向导
@@ -132,6 +135,7 @@ cp config.example.json config.local.json
 - Action Group 用原生活动日志格式（`useCommonAlertSchema=false`），工作流也兼容 Common Alert Schema。
 - 活动日志告警是无状态的，结束事件也会产生 Fired 实例。
 - 飞书限流（业务码 11232 或 HTTP 429）时等待后重发同一张卡片，等待时间逐次加长（15–30 秒、30–45 秒……），默认最多 8 次，约 10 分钟；其他拒收（如格式错误 9499）不重试。最终没发出去的，Logic App 这次运行标为失败。
+- 飞书消息最终没发出去（重试用尽、机器人被删除等）时，Logic App 运行失败。配置 `selfMonitorEmails` 后会收到邮件提醒；这条路不经过飞书，也不经过 AMR 工作流。
 - 不做持久化去重：Azure 投递或 HTTP 重试可能导致重复卡片，用 Event ID 辨认。
 - 只通知开始和结束，不是提前预告；实测从事件发生到 Logic App 开始处理约 2–7 分钟，不保证在故障转移前送达。
 

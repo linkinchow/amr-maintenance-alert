@@ -48,6 +48,18 @@
               "hideConfirmation": true
             },
             "toolTip": "飞书群自定义机器人的 webhook 地址，不需要配置签名校验。作为安全参数保存在 Logic App 中，部署输出里不会出现。"
+          },
+          {
+            "name": "selfMonitorEmails",
+            "type": "Microsoft.Common.TextBox",
+            "label": "自检告警邮箱（可选，多个用逗号分隔）",
+            "defaultValue": "",
+            "constraints": {
+              "required": false,
+              "regex": "^\\s*$|^\\s*[^@\\s,]+@[^@\\s,]+\\.[^@\\s,]+(\\s*,\\s*[^@\\s,]+@[^@\\s,]+\\.[^@\\s,]+)*\\s*$",
+              "validationMessage": "请输入邮箱地址，多个用逗号分隔；不需要自检告警就留空"
+            },
+            "toolTip": "飞书消息最终没发出去时（例如限流重试用尽、机器人被删除），Logic App 运行会失败。填写后会另建一个只发邮件的 Action Group，在 15 分钟内有失败运行时发邮件提醒，不依赖飞书。留空则不创建。"
           }
         ]
       },
@@ -91,6 +103,7 @@
       "location": "[location()]",
       "resourceGroupName": "[basics('resourceGroupName')]",
       "feishuWebhookUrl": "[steps('notify').feishuWebhookUrl]",
+      "selfMonitorEmails": "[if(empty(replace(steps('notify').selfMonitorEmails, ' ', '')), parse('[]'), split(replace(steps('notify').selfMonitorEmails, ' ', ''), ','))]",
       "subscriptions": "[map(filter(steps('scope').subscriptionsApi.value, (item) => contains(steps('scope').subscriptionIds, item.subscriptionId)), (item) => parse(concat('{\"id\":\"', item.subscriptionId, '\",\"name\":\"', replace(item.displayName, '\"', ''), '\"}')))]"
     }
   }

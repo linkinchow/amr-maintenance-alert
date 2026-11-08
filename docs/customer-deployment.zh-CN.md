@@ -16,6 +16,19 @@
 
 一次部署完成全部资源：`azuredeploy.json`（由 `main.bicep` 生成）是订阅级模板，用嵌套部署在每个选中的订阅里建资源组和规则。
 
+### 资源放在哪里
+
+所有订阅使用同一个资源组名，由参数 `resourceGroupName` 决定（默认 `rg-amr-alerts`）：
+
+| 订阅 | 资源组 | 里面的资源 |
+|---|---|---|
+| 部署订阅 A | `rg-amr-alerts` | Logic App、Action Group；A 也被选为监控订阅时，还有 A 的告警规则 |
+| 被监控订阅 B、C…… | `rg-amr-alerts` | 只有本订阅的告警规则 `ala-amr-health-events` |
+
+- 资源组不存在时由部署自动创建，区域为部署时选择的区域；告警规则和 Action Group 是全局资源，不受资源组区域影响。
+- 规则所在资源组和 AMR 所在资源组无关：规则的 scope 是整个订阅，覆盖该订阅任意资源组、任意区域的 AMR，以后新建的 AMR 也自动纳入。
+- 目前不支持按订阅指定不同的资源组名。
+
 ### 通知能力与边界
 
 - 监听 Resource Health 的 `InProgress` 和 `Resolved` 事件，分别表示开始／进行中和结束。
@@ -58,7 +71,7 @@ ARM 会更新同名资源：同名 Logic App 的定义和参数、同名 Action 
 点击仓库 README 中的 **Deploy to Azure** 按钮，在门户中按向导操作：
 
 1. **基本信息**：这一页的“订阅”是**部署订阅 A**（只放 Logic App 和 Action Group），再选区域、填写资源组名称（默认 `rg-amr-alerts`）。
-2. **飞书通知**：输入飞书 webhook。它是安全参数，只保存在 Logic App 中，不会出现在部署输出里。
+2. **飞书通知**：输入飞书 webhook。它是安全参数，只保存在 Logic App 中，不会出现在部署输出里。建议同时填写**自检告警邮箱**（多个用逗号分隔），见第 8 节。
 3. **监控订阅**：从下拉框（可搜索、可全选）勾选要监控 AMR 的订阅；卡片里显示的订阅名称取自这里。只勾选有写权限的订阅：全选会包含只读订阅，对它们建规则会失败。部署订阅也有 AMR 时，在这里同样勾上。
 4. **检查 + 创建**：确认后部署，嵌套部署会在每个选中的订阅里建资源组和规则。
 
@@ -259,7 +272,8 @@ HTTP 202 只表示工作流收到请求，还需要确认：
 - **轮换 webhook**：用新 webhook 重新部署（参数不变），再做一次合成消息测试。
 - **callback 签名泄露**：按 Logic App 文档轮换访问密钥，然后重新部署，以更新 Action Group 里的 callback。
 - 查询 Action Group 时只输出接收器名称、资源 ID 和启用状态，不输出整个对象。
-- 监控 Logic App 的失败运行：HTTP 200 不足以证明飞书发送成功，工作流还要求飞书业务码为 0，否则标为失败。
+- 监控 Logic App 的失败运行：HTTP 200 不足以证明飞书发送成功，工作流还要求飞书业务码为 0，限流时会重试，最终仍未发出则标为失败。
+- **自检告警**：部署时填写自检告警邮箱（向导第 2 步，或 CLI 参数 `selfMonitorEmails`，例如 `--parameters selfMonitorEmails='["ops@example.com"]'`），会在同一资源组另建只发邮件的 Action Group `ag-amr-selfmonitor`，以及指标告警 `<Logic App 名>-runs-failed`：Logic App 的 RunsFailed 在 15 分钟内大于 0 就发邮件，恢复后自动解除。它不经过飞书，所以飞书机器人失效时也能收到。首次添加邮箱时，Azure 会给该邮箱发一封“已加入 Action Group”的通知。留空则不创建；以后要关闭，重新部署时清空这个参数不会删除已建资源，需要手动删除这两个资源。
 - Consumption Logic App 按执行次数计费，量很小，可以按区域单价估算。
 
 ## 9. 停用与排障

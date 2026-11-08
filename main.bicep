@@ -31,6 +31,11 @@ param subscriptions array = [
 @maxValue(15)
 param feishuMaxAttempts int = 8
 
+@description('Self-monitoring e-mail addresses. Non-empty: a separate e-mail-only Action Group plus a metric alert when the Logic App has failed runs (> 0 in 15 minutes). Empty: no self-monitoring.')
+param selfMonitorEmails array = []
+
+param selfMonitorActionGroupName string = 'ag-amr-selfmonitor'
+
 @description('Create the alert rules enabled. Test deployments set false so real events do not reach a test group.')
 param ruleEnabled bool = true
 
@@ -56,6 +61,18 @@ module notifications 'modules/notifications.bicep' = {
     feishuWebhookUrl: feishuWebhookUrl
     subscriptionNames: toObject(subscriptions, s => toLower(s.id), s => s.name)
     feishuMaxAttempts: feishuMaxAttempts
+  }
+}
+
+module selfMonitor 'modules/self-monitor.bicep' = if (!empty(selfMonitorEmails)) {
+  name: 'amr-self-monitor'
+  scope: rg
+  params: {
+    workflowId: notifications.outputs.logicAppId
+    workflowName: logicAppName
+    actionGroupName: selfMonitorActionGroupName
+    emails: selfMonitorEmails
+    tags: tags
   }
 }
 
@@ -88,4 +105,5 @@ module rule 'modules/subscription-alert.bicep' = [for (sub, i) in subscriptions:
 output resourceGroupName string = rg.name
 output actionGroupId string = notifications.outputs.actionGroupId
 output logicAppId string = notifications.outputs.logicAppId
+output selfMonitorAlertId string = empty(selfMonitorEmails) ? '' : selfMonitor!.outputs.alertId
 output ruleIds array = [for (sub, i) in subscriptions: rule[i].outputs.ruleId]

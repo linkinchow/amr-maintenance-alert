@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "6150976647397903881"
+      "templateHash": "10441009223111464754"
     }
   },
   "parameters": {
@@ -60,6 +60,17 @@
       "metadata": {
         "description": "Feishu rate limiting (code 11232 / HTTP 429): attempts per message before the run fails; the wait grows with each attempt (8 attempts take about 10 minutes)."
       }
+    },
+    "selfMonitorEmails": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Self-monitoring e-mail addresses. Non-empty: a separate e-mail-only Action Group plus a metric alert when the Logic App has failed runs (> 0 in 15 minutes). Empty: no self-monitoring."
+      }
+    },
+    "selfMonitorActionGroupName": {
+      "type": "string",
+      "defaultValue": "ag-amr-selfmonitor"
     },
     "ruleEnabled": {
       "type": "bool",
@@ -574,6 +585,139 @@
       ]
     },
     {
+      "condition": "[not(empty(parameters('selfMonitorEmails')))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "amr-self-monitor",
+      "resourceGroup": "[parameters('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "workflowId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'amr-notifications'), '2025-04-01').outputs.logicAppId.value]"
+          },
+          "workflowName": {
+            "value": "[parameters('logicAppName')]"
+          },
+          "actionGroupName": {
+            "value": "[parameters('selfMonitorActionGroupName')]"
+          },
+          "emails": {
+            "value": "[parameters('selfMonitorEmails')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "16151861342665527472"
+            }
+          },
+          "parameters": {
+            "workflowId": {
+              "type": "string"
+            },
+            "workflowName": {
+              "type": "string"
+            },
+            "actionGroupName": {
+              "type": "string"
+            },
+            "emails": {
+              "type": "array"
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {}
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/actionGroups",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('actionGroupName')]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "copy": [
+                  {
+                    "name": "emailReceivers",
+                    "count": "[length(parameters('emails'))]",
+                    "input": {
+                      "name": "[format('email-{0}', copyIndex('emailReceivers'))]",
+                      "emailAddress": "[parameters('emails')[copyIndex('emailReceivers')]]",
+                      "useCommonAlertSchema": true
+                    }
+                  }
+                ],
+                "enabled": true,
+                "groupShortName": "AMRSelfMon"
+              }
+            },
+            {
+              "type": "Microsoft.Insights/metricAlerts",
+              "apiVersion": "2018-03-01",
+              "name": "[format('{0}-runs-failed', parameters('workflowName'))]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "description": "[format('AMR maintenance alerts self-monitoring: {0} has failed runs (Feishu notification not delivered).', parameters('workflowName'))]",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('workflowId')]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT15M",
+                "autoMitigate": true,
+                "criteria": {
+                  "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                  "allOf": [
+                    {
+                      "criterionType": "StaticThresholdCriterion",
+                      "name": "runsfailed",
+                      "metricNamespace": "Microsoft.Logic/workflows",
+                      "metricName": "RunsFailed",
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "timeAggregation": "Total"
+                    }
+                  ]
+                },
+                "actions": [
+                  {
+                    "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', parameters('actionGroupName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "alertId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/metricAlerts', format('{0}-runs-failed', parameters('workflowName')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'amr-notifications')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]"
+      ]
+    },
+    {
       "copy": {
         "name": "ruleRg",
         "count": "[length(parameters('subscriptions'))]"
@@ -761,6 +905,10 @@
     "logicAppId": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'amr-notifications'), '2025-04-01').outputs.logicAppId.value]"
+    },
+    "selfMonitorAlertId": {
+      "type": "string",
+      "value": "[if(empty(parameters('selfMonitorEmails')), '', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'amr-self-monitor'), '2025-04-01').outputs.alertId.value)]"
     },
     "ruleIds": {
       "type": "array",

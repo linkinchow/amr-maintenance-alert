@@ -62,6 +62,24 @@ class AmrTemplateTests(unittest.TestCase):
             if resource['type'] == 'Microsoft.Resources/deployments' and resource.get('location'):
                 self.assertIn('deployment().location', resource['name'])
 
+    def test_self_monitor_is_optional_and_email_only(self):
+        self.assertEqual(self.deploy['parameters']['selfMonitorEmails']['defaultValue'], [])
+        module = next(r for r in self.deploy['resources'] if r['type'] == 'Microsoft.Resources/deployments' and 'amr-self-monitor' in r['name'])
+        self.assertEqual(module['condition'], "[not(empty(parameters('selfMonitorEmails')))]")
+        resources = {r['type']: r for r in module['properties']['template']['resources']}
+        ag = resources['Microsoft.Insights/actionGroups']['properties']
+        # Independent of Feishu and of the AMR workflow (which drops non-AMR payloads).
+        self.assertNotIn('logicAppReceivers', ag)
+        self.assertNotIn('webhookReceivers', ag)
+        self.assertEqual([c['name'] for c in ag['copy']], ['emailReceivers'])
+        alert = resources['Microsoft.Insights/metricAlerts']['properties']
+        criterion = alert['criteria']['allOf'][0]
+        self.assertEqual((criterion['metricName'], criterion['operator'], criterion['threshold'], criterion['timeAggregation']),
+                         ('RunsFailed', 'GreaterThan', 0, 'Total'))
+        self.assertEqual(alert['windowSize'], 'PT15M')
+        outputs = load('ui/createUiDefinition.json')['parameters']['outputs']
+        self.assertIn("parse('[]')", outputs['selfMonitorEmails'])
+
     def test_ui_outputs_cover_required_parameters(self):
         outputs = load('ui/createUiDefinition.json')['parameters']['outputs']
         params = self.deploy['parameters']
